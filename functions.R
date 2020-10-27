@@ -1,10 +1,20 @@
-Helps <- function(){
-    cat("\n------>>> Enter 'Rscript bilidown.R -h' for seeing details of parameters setting! <<<------\n")
+checkPackages <- function(packages){
+    for(i in 1:length(packages)){
+        package = packages[i]
+        if (!requireNamespace(package, quietly = TRUE)){
+            suppressMessages(install.packages(package, quiet = T))
+        }
+    }
 }
 
+getHelp <- function(){
+    cat("\n------>>> Enter 'Rscript bilidown.R -h' to see details of parameters setting! <<<------\n\n")
+}
 
-checKFolderExists <- function(folder){
-    if(!dir.exists(folder)) dir.create(folder)
+checKFolderExists <- function(folders){
+    for(i in 1:length(folders)){
+        if(!dir.exists(folders[i])) dir.create(folders[i])
+    }
 }
 
 download <- function(URL){
@@ -16,36 +26,55 @@ downList <- function(URL){
 }
 
 flvToMp4 <- function(flv, mp4){
-    if(flv != mp4) system(paste("ffmpeg -i", flv, mp4))
+    for(i in 1:length(flv)){
+        if(flv[i] != mp4[i]) system(paste("ffmpeg -i", flv[i], mp4[i]), ignore.stderr = TRUE)
+    }
 }
 
 mp4ToMp3 <- function(mp4, mp3){
-    system(paste("ffmpeg -i", mp4, mp3))
+    for(i in 1:length(mp4)){
+        system(paste("ffmpeg -i", mp4[i], mp3[i]), ignore.stderr = TRUE)
+    }
 }
 
 countSpan <- function(start, end){
     extractClock <- function(time){
-        clock = strsplit(time, ":")
-        min = clock[[1]][2]
-        sec = clock[[1]][3]
-        min = as.integer(min)
-        sec = as.integer(sec)
-        return(list = c(min, sec))
+        clock = strsplit(time, ":")[[1]]
+        hor = as.integer(clock[1])
+        min = as.integer(clock[2])
+        sec = as.integer(clock[3])
+        return(list = c(hor, min, sec))
     }
-    
-    min_ST = extractClock(start)[1]
-    sec_ST = extractClock(start)[2]
-    min_ED = extractClock(end)[1]
-    sec_ED = extractClock(end)[2]
+
+    timeM = sapply(c(start, end), extractClock)
+ 	hor_ST = timeM[1, 1]
+ 	min_ST = timeM[2, 1]
+ 	sec_ST = timeM[3, 1]
+ 	hor_ED = timeM[1, 2]
+ 	min_ED = timeM[2, 2]
+ 	sec_ED = timeM[3, 2]
     
     if(sec_ED >= sec_ST){
-        sec_span = sec_ED - sec_ST
-        min_span = min_ED - min_ST
-    } else{
+	    sec_span = sec_ED - sec_ST
+        if(min_ED >= min_ST){
+	        min_span = min_ED - min_ST
+	        hor_span = hor_ED - hor_ST
+        } else{
+	        min_span = min_ED + 60 - min_ST
+	        hor_span = (hor_ED - 1) - hor_ST
+        }
+
+	} else{
         sec_span = sec_ED + 60 - sec_ST
-        min_span = (min_ED - 1) - min_ST
-    }
-    
+        if((min_ED - 1) >= min_ST){
+	        min_span = (min_ED - 1) - min_ST
+	        hor_span = hor_ED - hor_ST
+        } else{
+	        min_span = (min_ED - 1) + 60 - min_ST
+	        hor_span = (hor_ED - 1) - hor_ST
+        }
+	}
+
     checkTen <-function(n){
         if(n < 10){
             n = paste0("0", n)
@@ -54,10 +83,11 @@ countSpan <- function(start, end){
         }
         return(n)
     }
-    
-    sec_span = checkTen(sec_span)
+
+    hor_span = checkTen(hor_span)
     min_span = checkTen(min_span)
-    span = paste0("00:", min_span, ":", sec_span)
+    sec_span = checkTen(sec_span)
+    span = paste0(hor_span, ":", min_span, ":", sec_span)
     return(span)
 }
 
@@ -68,7 +98,7 @@ cutMp3 <- function(input_mp3, start, end, out_mp3){
     cmd = paste("ffmpeg -i", input_mp3, "-vn -acodec copy")
     cmd = paste(cmd, "-ss", start)
     cmd = paste(cmd, "-t", span, out_mp3)
-    system(cmd)
+    system(cmd, , ignore.stderr = TRUE)
 }
 
 checkArgs <- function(string){
@@ -91,36 +121,6 @@ getDownInfos <- function(line){
     return(args)
 }
 
-saveRes <- function(args){
-
-    if(!is.null(args$name)){
-        mp4Out = paste0(args$mp4Folder, "/", args$name, ".mp4")
-        file.copy(mp4File, mp4Out)
-    
-        if(!is.null(args$mp3)){
-            mp3Out = paste0(args$mp3Folder, "/", args$name, ".mp3")
-            if(!is.null(args$start)){
-                file.copy(mp3File_cut, mp3Out)
-            } else{
-                file.copy(mp3File, mp3Out)
-            }
-        }
-    } else{
-        file.copy(mp4File, args$mp4Folder)
-
-        if(!is.null(args$mp3)){
-            if(!is.null(args$start)){
-                file.copy(mp3File_cut, args$mp3Folder)
-            } else{
-                file.copy(mp3File, args$mp4Folder)
-            }
-        }
-    }
-
-    # remove tmpFolder
-    unlink("tmp", recursive = TRUE)
-}
-
 runWorkflow <- function(args){
 
     if(dir.exists("tmp"))
@@ -134,7 +134,7 @@ runWorkflow <- function(args){
         downList(args$url)
     }
     
-    cat("\nTranscoding flv file to mp4 file\n")
+    cat("Transcoding flv file to mp4 file\n")
     oldFile = list.files("tmp", full.names = TRUE)
     flvFile = gsub(" ", "_", oldFile)
     file.rename(oldFile, flvFile)
@@ -142,21 +142,18 @@ runWorkflow <- function(args){
     flvToMp4(flvFile, mp4File)
 
     if(!is.null(args$mp3)){
-        cat("\nTranscoding mp4 file to mp3 filey\n")
+        cat("Transcoding mp4 file to mp3 file\n")
         mp3File = gsub(".mp4", ".mp3", mp4File)
         mp4ToMp3(mp4File, mp3File)
     }
     
     if(!is.null(args$start)){
-        cat("\nCutting mp3 file\n")
+        cat("Cutting mp3 file\n")
         mp3File_cut = gsub(".mp3", "_cut.mp3", mp3File)
         cutMp3(mp3File, args$start, args$end, mp3File_cut)
-
     }
 
-    cat("\nCopying & rename files and remove tmpFolder\n")
-    # saveRes(args)
-
+    cat("Copying & rename files and remove tmpFolder\n")
     if(!is.null(args$name)){
         mp4Out = paste0(args$mp4Folder, "/", args$name, ".mp4")
         file.copy(mp4File, mp4Out)
@@ -183,5 +180,5 @@ runWorkflow <- function(args){
 
     # remove tmpFolder
     unlink("tmp", recursive = TRUE)
-    cat("\nDone!\n")
+    cat("Done!\n")
 }
